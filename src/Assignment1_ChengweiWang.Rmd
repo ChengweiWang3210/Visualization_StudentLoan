@@ -1,0 +1,420 @@
+---
+title: "Assignment1_ChengweiWang"
+header-includes: 
+  - \usepackage{setspace}\doublespacing
+graphics: yes
+fontsize: 12pt
+geometry: margin=1in
+indent: false
+mainfont: Georgia
+output:
+  html_notebook
+---
+
+```{r setup, include=FALSE, results='hide', warning=FALSE}
+library(knitr)
+opts_chunk$set(fig.path="figures/",
+               cache.path="cache/",
+               cache=FALSE,
+               echo=TRUE,
+               message=FALSE,
+               warning=FALSE, 
+               include = TRUE,
+               fig.retina = 2)  
+```
+
+```{r preparation, results='hide', warning=FALSE}
+library(data.table)
+library(ggplot2)
+library(ggthemes)
+library(tidyr)
+library(dplyr)
+library(plotly)
+library(DT)
+
+setwd("/Users/greatyifan/Desktop/@Columbia/2020spring/2_DataViz/course_materials/Exercises/03_student_loans")
+
+dt <- fread('data/survey_SCF.txt', header = T)
+colnames(dt) <- tolower(colnames(dt))
+
+options(scipen = 100)
+```
+
+```{r set_theme, include=TRUE}
+diy_theme <- theme_economist_white(gray_bg = F, base_size = 10, 
+                                   base_family = "georgia",horizontal = TRUE)+
+  theme(panel.grid.major = element_line(size = .3),
+        axis.line = element_line(colour = "black"))+
+  theme_tufte(base_size=14, ticks=F) 
+```
+
+
+## Task 1. Debt over time
+
+
+```{r q1_data, include=TRUE}
+dt_multiDebt <- dt[hdebt == 1, mean(debt, na.rm = T), by=year]
+setnames(dt_multiDebt, 'V1', 'totalDebt')
+dt_multiDebt$mort <- dt[hdebt == 1,mean(nh_mort, na.rm = T), by=year]$V1
+dt_multiDebt$creditCard <- dt[hdebt == 1,mean(ccbal, na.rm = T), by=year]$V1
+dt_multiDebt$install <- dt[hdebt == 1,mean(install, na.rm = T), by=year]$V1
+dt_multiDebt$vehicle <- dt[hdebt == 1,mean(veh_inst, na.rm = T), by=year]$V1
+dt_multiDebt$educ <- dt[hdebt == 1,mean(edn_inst, na.rm = T), by=year]$V1
+dt_multiDebt[, year := year(as.Date(as.character(year), format = '%Y'))]
+
+dt_compare <- gather(dt_multiDebt[,c('year', 'totalDebt', 'educ')], 'type', 'amount', -year)
+dt_other <- gather(dt_multiDebt[,-c('totalDebt', 'educ')], 
+                   'type', 'amount', -c('year'))
+```
+
+
+```{r q1_graph1, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+ggplot() +
+  geom_line(data = dt_compare, aes(x = year, y = amount, color = as.factor(type))) +
+  geom_point(data = dt_compare, aes(x = year, y = amount, color = as.factor(type)), 
+             show.legend = TRUE) +
+  geom_line(data = dt_other, 
+            aes(x = year, y = amount, color = as.factor(type)),
+            alpha = .6, linetype = 2) +
+  scale_y_log10() +
+  diy_theme +
+  labs(title = "Different Types of Debts' Change Over Time \n", 
+          subtitle = 'debt amount',
+          caption = '\n Source: Survey of Consumer Finances (SCF)') +
+  theme(plot.subtitle = element_text(color = 'grey'),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust = .5, size = 25),
+        legend.position = c(.5,1.05),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        axis.title.y = element_blank(),
+        panel.grid.major.y=element_line(size = .1, color = 'grey')) +
+  scale_x_continuous("year", 
+                     labels = as.character(dt_multiDebt$year),
+                              breaks = dt_multiDebt$year) +
+  scale_color_manual(labels = c("credit card", "student loan", "installment", 
+                                "mortgage", "total debt", "vehicle loan"), 
+                     values = c('#66c2a4', '#f46d43', '#41ae76', '#74c476', 
+                                '#00441b', '#a1d99b')) 
+
+```
+
+
+```{r q1_graph2, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+dt_ratio <- dt[, mean(debt2inc), by = year]
+## dt[year == 2016&income>0, mean(debt/income, na.rm = T)] 
+## this is how the debt2inc was calculated
+setnames(dt_ratio, 'V1', 'debt2inc')
+dt_ratio$leveratio <- dt[, mean(levratio), by = year]$V1
+dt_ratio$eduratio <- dt[income>0, mean(edn_inst/income, na.rm = T), by = year]$V1
+dt_ratio$mortratio <-dt[income>0, mean(nh_mort/income, na.rm = T), by = year]$V1
+dt_ratio$creditCard <-dt[income>0, mean(ccbal/income, na.rm = T), by = year]$V1
+dt_ratio$install <-dt[income>0, mean(install/income, na.rm = T), by = year]$V1
+dt_ratio$vehicle <-dt[income>0, mean(veh_inst/income, na.rm = T), by = year]$V1
+
+dt_compare2 <- gather(dt_ratio[,c('year','debt2inc', 'leveratio', 'eduratio')], key = 'type', value = 'value', - year)
+dt_other2 <- gather(dt_ratio[,-c('debt2inc', 'leveratio', 'eduratio')], key = 'type', value = 'value', - year)
+
+(allDebt2inc <- ggplot() +
+  geom_line(data = dt_compare2, 
+       aes(x = year, y = value, color = type)) +
+  geom_line(data = dt_other2, 
+       aes(x = year, y = value, color = type), 
+       alpha = .8, linetype = 2, size = .3) +
+  labs(title = "Debt-Income Ratio Change Over Time \n", 
+          caption = '\n Source: Survey of Consumer Finances (SCF)') +
+  diy_theme +
+  scale_color_manual(labels = c("credit card", "student loan", "installment", 
+                                "mortgage", "total debt", "vehicle loan"), 
+                     values = c('#66c2a4', '#00441b', '#f46d43', 
+                                '#41ae76', '#00441b', '#74c476', '#a1d99b')) +
+ theme(plot.subtitle = element_text(color = 'grey'),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_text(hjust = .5, size = 25),
+        legend.position = c(.5,1),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        axis.title.y = element_blank(),
+        panel.grid.major.y=element_line(size = .1, color = 'grey')) +
+    scale_x_continuous("year", 
+                     labels = as.character(dt_multiDebt$year),
+                              breaks = dt_multiDebt$year)) 
+
+```
+
+```{r q1_graph3, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+ggplot() +
+  geom_hline(yintercept = 1, color = '#6a51a3', linetype = 3, alpha = .5) +
+  geom_line(data = dt_compare2[dt_compare2$year >= 1998,], 
+       aes(x = year, y = value, color = type)) +
+  geom_point(data = dt_compare2[dt_compare2$year >= 1998 & dt_compare2$type == 'eduratio',],
+             aes(x = year, y = value), color = '#f46d43') +
+  # xlim(c(1997,2017)) +
+  # coord_cartesian(ylim=c(0,2)) +
+  labs(title = "Debt-Income Ratio Change Over Time \n", 
+          caption = '\n Source: Survey of Consumer Finances (SCF)') +
+  diy_theme +
+  scale_color_manual(labels = c("total debt to income", "student Loan to Income", "total debt to total assets"),
+                     values = c('#41ae76', '#f46d43', '#41ae76')) +
+ theme(plot.title = element_text(hjust = .5, size = 25),
+        axis.line = element_blank(),
+        axis.title = element_blank(),
+        legend.position = c(.5,1),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        axis.title.y = element_blank(),
+        panel.grid.major.y=element_line(size = .1, color = 'grey')) +
+    scale_x_continuous("year", 
+                     labels = as.character(dt_multiDebt$year),
+                              breaks = dt_multiDebt$year)
+
+```
+
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+    In this task, I first use the first figure to compare the overall amount of debt with different types of debt, including student loan. This can help the reader get a big picture of household debt share and how they change over the past two decades. I used the orange line to show that the absolute amount of student loan is increasing, while the total amount of debt is fairly constant (indicating by the solid dark green line). In this way, we can stress the increasing importance of education.</p>    
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+    The second figure give another aspect of the same problem, but here as we can see, the outliers in 1992 has ruined the whole picture, making the pattern in the rest of the years vague. Although this dramatic rise in the early 1990s is a great representation of the recession period, it is relatively irrelavate to our topic. Therefore, I would recommend to use the third figure shown above. </p> 
+    
+<p style="font-family: georgia; font-size:11pt; font-style:regular">    
+    In the third graph, I cut out several years in last century, and only compare the pattern between student loan and the total debt. In general, the debet-to-income ratio of student loan is consistant with the total-debt-to-income ratio: they rose together. However, when we compare the 2016 student loan to income with previous data, we can see an increase, and this can be another way to show that it is getting popular for people to borrow money for their education.</p>  
+
+
+## Task 2. Tell me who you are
+
+```{r q2_graph1, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+dt[, haveKids := ifelse(kids == 0, 0, 1)]
+dt_gendered <- dt[year == 2016, mean(edn_inst), by = .(year, hhsex, haveKids, married)]
+dt_gendered$hhsex <- factor(dt_gendered$hhsex)
+levels(dt_gendered$hhsex) <- c('male', 'female')
+dt_gendered$haveKids <- factor(dt_gendered$haveKids)
+levels(dt_gendered$haveKids) <- c('no\nkids', 'have\nkid(s)')
+dt_gendered$married <- factor(dt_gendered$married)
+levels(dt_gendered$married) <- c('married', 'single')
+
+ggplot(dt_gendered,
+       aes(x = as.factor(hhsex), y = V1, fill = as.factor(hhsex))) +
+  geom_bar(stat = 'identity', 
+           width = .3, alpha = .85) +
+  diy_theme +
+  scale_fill_manual(values = c('#f46d43','#66bd63')) +
+  facet_grid(cols = vars(married), rows = vars(haveKids)) +
+  theme(axis.title = element_blank(),
+        legend.position = c(.5,1.05),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        axis.text.x=element_text(size = 15),
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.x=element_blank(),
+        panel.grid.major.y=element_line(size = .3, color = 'grey'),
+        strip.text.y = element_text(size = 18, angle = 0, vjust = .5),
+        strip.text.x = element_text(size = 18),
+        plot.title = element_text(hjust = .5, size = 25)) +
+  labs(title = 'Gender and Family Status and the Amount of Student Loan\n',
+       caption = '\n Source: Survey of Consumer Finances (SCF)')
+
+```
+
+
+```{r q2_graph2, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+# single women 1, single mother 2, married women 3, married mother 4
+dt[,women := ifelse(married == 2& haveKids == 0, 1,
+                    ifelse(married == 2 & haveKids == 1, 2,
+                           ifelse(married == 1 & haveKids == 0, 3, 4)))]
+dt$women <- factor(dt$women)
+levels(dt$women) <- c('single women', 'single mother', 'married women', 'married mother')
+dt$agecl <- factor(dt$agecl)
+levels(dt$agecl) <- c('less than\n 35 years old', '35-44', '45-54', '55-64', '65-74', 'more than\n 75 years old' )
+
+women <- ggplot(dt[year == 2016 & hhsex == 2 & edn_inst > 1, ],
+       aes(x = agecl, y = edn_inst)) +
+  geom_jitter(aes(color = women), alpha = .4) +
+  geom_boxplot(alpha = 0, outlier.alpha = .1, color = '#4d4d4d') +
+  scale_y_log10() +
+  diy_theme +
+  scale_color_manual(values = c('#fee08b', '#99d594', '#d53e4f', '#3288bd')) +
+  theme(legend.title = element_blank(),
+        axis.title = element_blank(),
+        axis.ticks.x = element_line(size = .3, color = 'darkgrey'),
+        axis.ticks.length.x = unit(.05,'cm'),
+        axis.text.x=element_text(size = 15),
+        legend.position = c(.5,1),
+        legend.direction = 'horizontal',
+        panel.grid.major.y=element_line(size = .2, color = 'grey'),
+        plot.title = element_text(hjust = .5, size = 25)) +
+  labs(title = 'Different Types of Women and Their Student Loan\n',
+       caption = '\n Source: Survey of Consumer Finances (SCF)')
+
+print(women)
+```
+
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+In this section, I would focus this question to a more specific angle, and see the student loan pattern through the lens of gender, family and childrearing. </p> 
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+In the first graph, I showed the different pattern between male and female, single or married, having kids or not. It is surprising to see how single mother having such a burden. </p> 
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+Furthermore, when I keep on digging into the relationship between student loan and women's marriage status and position in their life circle, we can see the difficulty young women (especially young single women) have been through. </p> 
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+If there is only one slot in the report available to put the graph in, I would recommend the first graph, as it gives a bigger picture, and involving both male and female. Besides, the sharp comparison can sure be "clickbaity".</p> 
+
+
+## Task 3. Wealth and Income Distribution
+
+
+```{r q3, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+dt_nwcat <- dt[year == 2016&edn_inst>0,]
+dt_nwcat$nwcat <- as.factor(dt_nwcat$nwcat)
+levels(dt_nwcat$nwcat) <- c('least \nwealthy','less \nwealthy','medium','wealthy','most \nwealthy')
+
+ggplot(data = dt_nwcat,  
+       aes(x =  edn_inst/debt, fill = as.factor(nwcat))) +
+  geom_histogram(binwidth = .01) +
+  scale_y_continuous(expand = c(0, 0)) +
+  facet_grid(rows = vars(nwcat), scales = 'free_y', switch = 'both') +
+  diy_theme+
+  labs(title = "The Proportion of Student Loan in Total Debt and Family Net Worth",
+      caption = '\n Source: Survey of Consumer Finances (SCF)')+
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_text(size = 15),
+        strip.text.y=element_text(size = 18, angle = 180, vjust = 0),
+        legend.position = 'none',
+        plot.title = element_text(hjust = .5, size = 25))+
+  annotate("segment", x=-Inf, xend=Inf, y=-Inf, yend=-Inf) +
+  scale_fill_manual(values = c('#66bd63','#a6d96a','#fee08b','#fdae61','#f46d43'))+
+  scale_x_continuous(labels = c('0% of \n their loan is \n student loan','','half of \n their loan is \n student loan','','100% of \n their loan is \n student loan')) +
+  geom_vline(xintercept = c(0,.5,1), linetype = 3, alpha = .3)
+
+```
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+In this section, I trt to depict the pattern between family capital and their educational debt. I strongly recommend this graph, as it just speaks for itself. We can see a distinct pattern in the stratified histogram. Less well-off families are more likely to devote all their money (at least borrowed money) into education, while affluent families tend not to do so. 
+</p> 
+
+
+
+## Task 4. Going broke
+
+
+```{r q4_graph1, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+dt[, thrifty := foodhome/(foodhome + fooddelv + foodaway)]
+dt[, isThrifty := cut(dt$thrifty, 5)]
+dt[, oops := ifelse(bnkruplast5 == 1 | forecllast5 == 1, 1, 0)]
+
+dt_oops_year <- dt[year %in% 1998:2016&hdebt == 1, mean(edn_inst/debt), 
+                   by = .(year, oops)]
+dt_oops_year$oops <- factor(dt_oops_year$oops)
+levels(dt_oops_year$oops) <- c('no financial crisis', 'have financial crisis')
+
+ggplot(dt_oops_year) +
+  geom_line(aes(x = year, y = V1, color = as.factor(oops), 
+                group = as.factor(year), size = 3), alpha = .5, color = '#ffffbf') +
+  geom_point(aes(x = year, y = V1, color = as.factor(oops), 
+                 group = as.factor(year), size = 3)) +
+  diy_theme +
+  geom_line(data = dt_oops_year,
+            aes(x = year, y = V1, color = as.factor(oops)),
+            alpha = .5, size = .2,
+            linetype = 2) +
+  scale_color_manual(values = c('#f46d43','#66bd63')) +
+  labs(title = 'Proportion of Student Loan in Their Total Debt Amount and\nPersonal Financial Crisis\n',
+       caption = '\n Source: Survey of Consumer Finances (SCF)') +
+  scale_size(guide = F) +
+  theme(axis.title = element_blank(),
+        legend.position = c(.5,1),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.x=element_blank(),
+        panel.grid.major.y=element_line(size = .3, color = 'grey'),
+        plot.title = element_text(hjust = .5, size = 25)) +
+  scale_x_continuous("year", 
+                     labels = as.character(dt_multiDebt$year),
+                              breaks = dt_multiDebt$year) 
+```
+
+
+```{r q4_graph2, include=TRUE, fig.retina=2, fig.height=4, fig.width=6}
+dt$oops <- factor(dt$oops)
+levels(dt$oops) <- c('no financial crisis', 'have financial crisis')
+
+ggplot(dt[year == 2016&edn_inst>0], 
+       aes(x = thrifty, y = edn_inst, color = as.factor(oops)))+
+  geom_jitter(alpha = .2, size = 3)+
+  scale_y_log10() +
+  labs(title = 'Amount of Student Loan and Personal Consumption Behavior in 2016\n',
+       caption = '\n Source: Survey of Consumer Finances (SCF)') +
+  diy_theme +
+  theme(axis.title = element_blank(),
+        legend.position = c(.5,1),
+        legend.title = element_blank(), 
+        legend.direction = 'horizontal',
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.x=element_blank(),
+        panel.grid.major.y=element_line(size = .3, color = 'grey'),
+        plot.title = element_text(hjust = .5, size = 25)) +
+  scale_color_manual(values = c('#f46d43','#66bd63'))+
+  scale_x_continuous(labels =
+                       c('least\nthrifty','','medium\nthrifty','','extremely\nthrifty')) +
+  geom_vline(xintercept = c(0,.5,1), linetype = 3, alpha = .3) 
+
+```
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+In this section, I compare those who messed up their own financial situation with those who do not in terms of their student loan. Over the years (data before 1998 is left out because of missing data), people who are in personal financial crisis tend to devote more into their (or their children's) education. This can be a great aspect to tell a story. 
+</p> 
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+The second graph shows how thrifty related to people's student loan amount and their personal financial situation. It seems that people who lead a frugal life tend to have more and higher student loan. This sounds like a great story to talk about the social structure. 
+</p> 
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+If I have to recommend, I would choose the first one, because of its over-time perspective and the strong comparison between these two types of people. 
+</p> 
+
+            
+## Task 5. Make two plots interactive
+
+
+```{r q5_graph1, fig.retina=2, fig.height=4, fig.width=6}
+ggplotly(women,  width = 900, height = 700)
+```
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+The reason why I chose to make this one interactive is that it contains a large amount of information and points are crowned into some of these boxes. By clicking on and off these groups of women, reader can compare between two groups or see pattern of only one group of women. 
+</p> 
+
+
+
+```{r q5_graph2, fig.retina=2, fig.height=4, fig.width=6}
+ggplotly(allDebt2inc,  width = 900, height = 700)
+```
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+I choose to interactivate this graph because the whold time line is messed up by the "outlier" in 1992. Readers using this interactive map can help themselves to see more detailed patterns in other years, by zooming in and out. 
+</p> 
+
+
+## Task 6. Data Table
+
+```{r q6}
+dt_inter <- dt[year == 2016, c('year', 'women', 'thrifty', 'agecl', 'income', 'edn_inst')]
+dt_inter[,thrifty:=round(thrifty,3)]
+datatable(dt_inter, rownames = FALSE,
+          colnames = c('Year', 'Types of Women', 'Thrifty Degree', 'Age', 'Income', 'Student Loan'),
+          filter = list(position = "top"),
+          options = list(language = list(sSearch = "Filter:"))
+  )
+```
+
+<p style="font-family: georgia; font-size:11pt; font-style:regular">
+I chose to make this table as an interactive one is because that one of the major reasons why people want to manipulate table themselves is that they want to see how people sharing the same features as them look like. Therefore, I gave this table so that women can choose over features and see their own position inside their counterparts. 
+</p> 
